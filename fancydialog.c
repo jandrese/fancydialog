@@ -5,6 +5,8 @@
 #include <strings.h>
 #include <getopt.h>
 
+#include <gtk/gtk.h>
+
 static struct option getopt_long_options[] =
 {
 	{"help",		no_argument,		0,	0},
@@ -111,12 +113,42 @@ int init_option_meta(option_meta* meta, int argc, char** argv)
 	return 0;
 }
 
+void ok_click(GtkWidget* button, gpointer nothing)
+{
+	int* response;
+	response = (int*)nothing;
+	*response = 0;
+	gtk_main_quit();
+	return;
+}
+
+void cancel_click(GtkWidget* button, gpointer nothing)
+{
+	int* response;
+	response = (int*)nothing;
+	*response = 1;
+	gtk_main_quit();
+	return;
+}
+
 int main(int argc, char** argv)
 {
 	option_meta longopts;
 	const char* name;
 	char* value;
+	int response;
 
+	GtkWidget* window;
+	GtkWidget* layout;
+
+	gtk_init(&argc, &argv);
+
+	window = gtk_window_new(GTK_WINDOW_TOPLEVEL);
+	GdkRectangle screensize;
+	gdk_monitor_get_workarea(gdk_display_get_primary_monitor(gdk_display_get_default()),
+				&screensize);
+
+	layout = gtk_box_new(GTK_ORIENTATION_VERTICAL, 0);
 	init_option_meta(&longopts, argc, argv);
 
 	while ( get_next_opt(&longopts, &name, &value) == 0 ) 
@@ -161,6 +193,32 @@ int main(int argc, char** argv)
 		}
 		printf("\n");
 	}
+
+	/* Create the buttons */
+	GtkWidget* buttonlayout;
+	GtkWidget* cancelbutton;
+	GtkWidget* okbutton;
+
+	buttonlayout = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 8);
+
+	okbutton = gtk_button_new_with_label("Ok");
+	g_signal_connect(G_OBJECT(okbutton), "clicked", 
+			G_CALLBACK(ok_click), &response);
+	gtk_box_pack_start(GTK_BOX(buttonlayout), okbutton, FALSE, FALSE, 4);
+
+	cancelbutton = gtk_button_new_with_label("Cancel");
+	g_signal_connect(G_OBJECT(cancelbutton), "clicked",
+			G_CALLBACK(cancel_click), &response);
+	gtk_box_pack_start(GTK_BOX(buttonlayout), cancelbutton, FALSE, FALSE, 4);
+
+	gtk_box_pack_start(GTK_BOX(layout), buttonlayout, FALSE, FALSE, 0);
+
+	gtk_container_add(GTK_CONTAINER(window), layout);
+	gtk_widget_show_all(window);
+
+	gtk_main();
+
+	printf("Response was %d\n", response);
 
 	return 0;
 }
