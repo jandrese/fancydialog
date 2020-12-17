@@ -22,9 +22,9 @@ static struct option getopt_long_options[] =
 	{"password-default",	required_argument,	0,	0},
 	{"add-calendar",	required_argument,	0,	0},
 	{"add-checkbox",	required_argument,	0,	0},
-	{"checked",		no_argument,		0,	0},
-	{"add-combo",		required_argument,	0,	0},
-	{"combo-values",	required_argument,	0,	0},
+	{"checked",		required_argument,	0,	0},
+	{"add-combobox",	required_argument,	0,	0},
+	{"combo-value",		required_argument,	0,	0},
 	{"combo-default",	required_argument,	0,	0},
 	{"add-file-selector",	required_argument,	0,	0},
 	{"file-default",	required_argument,	0,	0},
@@ -62,6 +62,28 @@ typedef struct
 char* entry_to_text(GtkWidget* entry)
 {
 	return (char*)gtk_entry_get_text(GTK_ENTRY(entry));
+}
+
+char* check_button_to_text(GtkWidget* entry)
+{
+	if ( gtk_toggle_button_get_active(GTK_TOGGLE_BUTTON(entry)) == TRUE )
+		return "True";
+	else
+		return "False";
+}
+
+char* combobox_to_text(GtkWidget* entry)
+{
+	char* response;
+
+	/* We're supposed to g_free the response when we're done with it
+	 * but the program will be over at that point so screw it.
+	 */
+	response = gtk_combo_box_text_get_active_text(GTK_COMBO_BOX_TEXT(entry));
+	if ( response == NULL )
+		return "(Unselected)";
+	else
+		return response;
 }
 
 /***************************************************************************/
@@ -106,18 +128,21 @@ int get_next_opt(option_meta* meta, const char** option, char** value)
 	return 0;
 }
 
-int get_optional_default(option_meta* meta, const char* fieldname, char** value)
+/* Returns 1 if an optional argument was detected, 0 if not */
+int get_optional_default(option_meta* meta, const char** name, char** value)
 {
-	const char* name;
+	*name = NULL;
 	*value = NULL;
 
-	if ( get_next_opt(meta, &name, value) == 0 )
+	if ( get_next_opt(meta, name, value) == 0 )
 	{
-		if ( strcasecmp(name, fieldname) != 0 )
+		if ( strncasecmp(*name, "add-", 4) != 0 )
 		{
 			*value = NULL;
 			meta->option_queued = 1;
+			return 0;
 		}
+		return 1;
 	}
 	return 0;
 }
@@ -174,17 +199,17 @@ int main(int argc, char** argv)
 	GtkWidget* window;
 	GtkWidget* layout;
 
-	textconverters* totext;
+	textconverters* fields;
 
 	gtk_init(&argc, &argv);
 
 	/* Not every arg will be a converter, but this guarantees
 	 * that we will have enough space for all of them.
 	 */
-	totext = malloc(sizeof(textconverters) * argc);
-	memset(totext, 0, sizeof(textconverters) * argc);
+	fields = malloc(sizeof(textconverters) * argc);
+	memset(fields, 0, sizeof(textconverters) * argc);
 
-	if ( totext == NULL )
+	if ( fields == NULL )
 	{
 		perror("malloc textconverters");
 		exit(1);
@@ -194,22 +219,22 @@ int main(int argc, char** argv)
 	gdk_monitor_get_workarea(gdk_display_get_primary_monitor(gdk_display_get_default()),
 				&screensize);
 
-	layout = gtk_box_new(GTK_ORIENTATION_VERTICAL, 0);
+	layout = gtk_box_new(GTK_ORIENTATION_VERTICAL, 8);
 	init_option_meta(&longopts, argc, argv);
 
 	// You might be tempted to use optind here, but it gets
 	// all messed up when we look forward to see if the -default
 	// option was specified.
-	int widgetindex = 0;
+	int wi = 0;
 	while ( get_next_opt(&longopts, &name, &value) == 0 ) 
 	{
-		widgetindex++;
+		wi++;
 		if ( strcasecmp(name, "add-label") == 0 )
 		{
-			totext[widgetindex].widget = gtk_label_new(value);
-			gtk_label_set_xalign(GTK_LABEL(totext[widgetindex].widget), 0.0);
+			fields[wi].widget = gtk_label_new(value);
+			gtk_label_set_xalign(GTK_LABEL(fields[wi].widget), 0.0);
 			gtk_box_pack_start(GTK_BOX(layout),
-				totext[widgetindex].widget, FALSE, FALSE, 4);
+				fields[wi].widget, FALSE, FALSE, 4);
 			continue;
 		}
 
@@ -220,45 +245,150 @@ int main(int argc, char** argv)
 
 		if ( strcasecmp(name, "add-entry") == 0 )
 		{
+			const char* default_name;
 			char* default_value;
 
-			get_optional_default(&longopts, 
-					     "entry-default", 
-					     &default_value);
+			fields[wi].widget = gtk_entry_new();
 
-			totext[widgetindex].widget = gtk_entry_new();
+			if ( get_optional_default(&longopts, &default_name, &default_value) )
+			{
+				if ( strcasecmp(default_name, "entry-default") == 0 )
+				{
+					gtk_entry_set_text(GTK_ENTRY(fields[wi].widget), default_value);
+				}
+				else
+				{
+					fprintf(stderr, "Error: '%s' is not a valid option to 'add-entry'\n", default_name);
+					exit(-1);
+				}
+			}
 
-			if ( default_value != NULL )
-				gtk_entry_set_text(GTK_ENTRY(totext[widgetindex].widget), default_value);
-			totext[widgetindex].get_item_text = &entry_to_text;
-			add_input_to_layout(layout, value, totext[widgetindex].widget);
+			fields[wi].get_item_text = &entry_to_text;
+			add_input_to_layout(layout, value, fields[wi].widget);
 			continue;
 		}
 
 		if ( strcasecmp(name, "add-password") == 0 )
 		{
-			totext[widgetindex].widget = gtk_entry_new();
+			fields[wi].widget = gtk_entry_new();
 			gtk_entry_set_visibility(
-				GTK_ENTRY(totext[widgetindex].widget), FALSE);
-			totext[widgetindex].get_item_text = &entry_to_text;
-			add_input_to_layout(layout, value, totext[widgetindex].widget);
+				GTK_ENTRY(fields[wi].widget), FALSE);
+			fields[wi].get_item_text = &entry_to_text;
+			add_input_to_layout(layout, value, fields[wi].widget);
 			continue;
 		}
 
+		if ( strcasecmp(name, "add-calendar") == 0 )
+		{
+			continue;
+		}
+		if ( strcasecmp(name, "add-checkbox") == 0 )
+		{
+			const char* opt_name;
+			char* is_checked;
 
+			fields[wi].widget = gtk_check_button_new();
 
-		printf("Error: Option %s is not understood\n", name);
-		exit(1);
+			if ( get_optional_default(&longopts, &opt_name, &is_checked) )
+			{
+				if ( strcasecmp(opt_name, "checked") == 0 )
+				{
+					if ( strcasecmp(is_checked, "false") != 0 && 
+					     strcasecmp(is_checked, "0") != 0 && 
+					     strcasecmp(is_checked, "no") != 0 )
+					{
+						gtk_toggle_button_set_active(GTK_TOGGLE_BUTTON(fields[wi].widget), TRUE);
+					}
+				}
+				else
+				{
+					fprintf(stderr, "Error, '%s' is not a valid option for 'add-checkbox'\n", opt_name );
+					exit(-1);
+				}
+			}
+
+			fields[wi].get_item_text = &check_button_to_text;
+			add_input_to_layout(layout, value, fields[wi].widget);
+			continue;
+		}
+
+		if ( strcasecmp(name, "add-combobox") == 0 )
+		{
+			const char* opt_name;
+			char* opt_val;
+
+			fields[wi].widget = gtk_combo_box_text_new();
+
+			while ( get_optional_default(&longopts, &opt_name, &opt_val) )
+			{
+				if ( strcasecmp(opt_name, "combo-value") == 0 )
+				{
+					gtk_combo_box_text_append_text(
+						GTK_COMBO_BOX_TEXT(fields[wi].widget),
+						opt_val);
+				}
+				else if ( strcasecmp(opt_name, "combo-default") == 0 )
+				{
+					gtk_combo_box_text_append_text(
+						GTK_COMBO_BOX_TEXT(fields[wi].widget),
+						opt_val);
+				}
+				else
+				{
+					fprintf(stderr, "Error, '%s' is not a valid option for 'add-combo'\n", opt_name);
+					exit(-1);
+				}
+			}
+
+			fields[wi].get_item_text = &combobox_to_text;
+			add_input_to_layout(layout, value, fields[wi].widget);
+
+			continue;
+		}
+
+		if ( strcasecmp(name, "add-file-selector") == 0 )
+		{
+			continue;
+		}
+
+		if ( strcasecmp(name, "add-slider") == 0 )
+		{
+			continue;
+		}
+
+		if ( strcasecmp(name, "add-font") == 0 )
+		{
+			continue;
+		}
+
+		if ( strcasecmp(name, "add-color") == 0 )
+		{
+			continue;
+		}
+
+		if ( strcasecmp(name, "add-application") == 0 )
+		{
+			continue;
+		}
+
+		if ( strcasecmp(name, "add-page-setup") == 0 )
+		{
+			continue;
+		}
+
+		if ( strcasecmp(name, "add-print") == 0 )
+		{
+			continue;
+		}
+
+		printf("Error: Option %s is not supported.\n", name);
+		exit(-1);
 	}
 
 	if ( optind < argc )
 	{
-		printf("Remaining arguments: ");
-		while ( optind < argc )
-		{
-			printf("%s ", argv[optind++]);
-		}
-		printf("\n");
+		printf("Unable to process argument '%s'\n", argv[optind]);
+		exit(-1);
 	}
 
 	/* Create the buttons */
@@ -290,12 +420,12 @@ int main(int argc, char** argv)
 
 	for ( int optnum = 1; optnum < argc; optnum++ )
 	{
-		if ( totext[optnum].get_item_text == NULL )
+		if ( fields[optnum].get_item_text == NULL )
 			continue;
 
 		char* text;
 
-		text = totext[optnum].get_item_text(totext[optnum].widget);
+		text = fields[optnum].get_item_text(fields[optnum].widget);
 
 		if ( text == NULL )
 		{
@@ -307,7 +437,7 @@ int main(int argc, char** argv)
 		}
 	}
 
-	free(totext);
+	free(fields);
 	return 0;
 }
 
