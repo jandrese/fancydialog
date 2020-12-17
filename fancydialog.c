@@ -38,6 +38,11 @@ static struct option getopt_long_options[] =
 	{0,			0,			0,	0},
 };
 
+typedef struct
+{
+	char*(*get_item_text)(GtkWidget* widget);
+	GtkWidget* widget;
+} textconverters;
 
 typedef struct
 {
@@ -48,6 +53,18 @@ typedef struct
 	int previous_hasarg;
 	int option_queued;
 } option_meta;
+
+/***************************************************************************/
+/* Each field type needs a "getter" that returns a basic string when given
+ * the widget.
+ */
+
+char* entry_to_text(GtkWidget* entry)
+{
+	return (char*)gtk_entry_get_text(GTK_ENTRY(entry));
+}
+
+/***************************************************************************/
 
 int get_next_opt(option_meta* meta, const char** option, char** value)
 {
@@ -131,6 +148,22 @@ void cancel_click(GtkWidget* button, gpointer nothing)
 	return;
 }
 
+int add_input_to_layout(GtkWidget* layout, char* labeltext, GtkWidget* input)
+{
+	GtkWidget* input_layout;
+	GtkWidget* label;
+
+	label = gtk_label_new(labeltext);
+	input_layout = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 8);
+
+	gtk_box_pack_start(GTK_BOX(input_layout), label, FALSE, FALSE, 4);
+	gtk_box_pack_start(GTK_BOX(input_layout), input, FALSE, FALSE, 4);
+	gtk_box_pack_start(GTK_BOX(layout), input_layout, FALSE, FALSE, 4);
+
+	return 0;
+}
+
+
 int main(int argc, char** argv)
 {
 	option_meta longopts;
@@ -141,8 +174,21 @@ int main(int argc, char** argv)
 	GtkWidget* window;
 	GtkWidget* layout;
 
+	textconverters* totext;
+
 	gtk_init(&argc, &argv);
 
+	/* Not every arg will be a converter, but this guarantees
+	 * that we will have enough space for all of them.
+	 */
+	totext = malloc(sizeof(textconverters) * argc);
+	memset(totext, 0, sizeof(textconverters) * argc);
+
+	if ( totext == NULL )
+	{
+		perror("malloc textconverters");
+		exit(1);
+	}
 	window = gtk_window_new(GTK_WINDOW_TOPLEVEL);
 	GdkRectangle screensize;
 	gdk_monitor_get_workarea(gdk_display_get_primary_monitor(gdk_display_get_default()),
@@ -151,17 +197,24 @@ int main(int argc, char** argv)
 	layout = gtk_box_new(GTK_ORIENTATION_VERTICAL, 0);
 	init_option_meta(&longopts, argc, argv);
 
+	// You might be tempted to use optind here, but it gets
+	// all messed up when we look forward to see if the -default
+	// option was specified.
+	int widgetindex = 0;
 	while ( get_next_opt(&longopts, &name, &value) == 0 ) 
 	{
+		widgetindex++;
 		if ( strcasecmp(name, "add-label") == 0 )
 		{
-			printf("Adding label %s\n", value);
+			totext[widgetindex].widget = gtk_label_new(value);
+			gtk_label_set_xalign(GTK_LABEL(totext[widgetindex].widget), 0.0);
+			gtk_box_pack_start(GTK_BOX(layout),
+				totext[widgetindex].widget, FALSE, FALSE, 4);
 			continue;
 		}
 
 		if ( strcasecmp(name, "text") == 0 )
 		{
-			printf("Text field %s\n", value);
 			continue;
 		}
 
@@ -169,16 +222,30 @@ int main(int argc, char** argv)
 		{
 			char* default_value;
 
-			printf("Adding entry field %s", value);
 			get_optional_default(&longopts, 
 					     "entry-default", 
 					     &default_value);
-			if ( default_value != NULL )
-				printf(" with default value %s", default_value);
-			printf("\n");
 
+			totext[widgetindex].widget = gtk_entry_new();
+
+			if ( default_value != NULL )
+				gtk_entry_set_text(GTK_ENTRY(totext[widgetindex].widget), default_value);
+			totext[widgetindex].get_item_text = &entry_to_text;
+			add_input_to_layout(layout, value, totext[widgetindex].widget);
 			continue;
 		}
+
+		if ( strcasecmp(name, "add-password") == 0 )
+		{
+			totext[widgetindex].widget = gtk_entry_new();
+			gtk_entry_set_visibility(
+				GTK_ENTRY(totext[widgetindex].widget), FALSE);
+			totext[widgetindex].get_item_text = &entry_to_text;
+			add_input_to_layout(layout, value, totext[widgetindex].widget);
+			continue;
+		}
+
+
 
 		printf("Error: Option %s is not understood\n", name);
 		exit(1);
@@ -218,8 +285,29 @@ int main(int argc, char** argv)
 
 	gtk_main();
 
-	printf("Response was %d\n", response);
+	if ( response != 0 )
+		return response;
 
+	for ( int optnum = 1; optnum < argc; optnum++ )
+	{
+		if ( totext[optnum].get_item_text == NULL )
+			continue;
+
+		char* text;
+
+		text = totext[optnum].get_item_text(totext[optnum].widget);
+
+		if ( text == NULL )
+		{
+			printf("%d: (NULL)\n", optnum);
+		}
+		else
+		{
+			printf("%d: %s\n", optnum, text);
+		}
+	}
+
+	free(totext);
 	return 0;
 }
 
