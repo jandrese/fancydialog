@@ -474,3 +474,10 @@ Usage:
 --add-page-setup="Label"	Page Setup (for printing)
 --add-print="Label"		Print Dialog
 */
+
+/* new plan for suboptions:  Make a new getopt_long_options string for each and use the regular
+ * getopt_long to process.  This avoids the problem of having to do all of the extra error
+ * checking and also having to put options back.  getopt_long will stop processing when it sees
+ * an option it doesn't understand.  I can also shorten option names since they will be unique
+ * to each -add option automatically.
+ */
