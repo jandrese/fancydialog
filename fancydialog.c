@@ -7,7 +7,7 @@
 
 #include <gtk/gtk.h>
 
-static struct option getopt_long_options[] =
+static struct option main_options[] =
 {
 	{"help",		no_argument,		0,	0},
 	{"text",		required_argument,	0,	0},
@@ -17,12 +17,10 @@ static struct option getopt_long_options[] =
 	{"add-separator",	no_argument,		0,	0},
 	{"add-image",		required_argument,	0,	0},
 	{"add-entry",		required_argument,	0,	0},
-	{"entry-default",	required_argument,	0,	0},
 	{"add-password",	required_argument,	0,	0},
 	{"password-default",	required_argument,	0,	0},
 	{"add-calendar",	required_argument,	0,	0},
 	{"add-checkbox",	required_argument,	0,	0},
-	{"checked",		required_argument,	0,	0},
 	{"add-combobox",	required_argument,	0,	0},
 	{"combo-value",		required_argument,	0,	0},
 	{"combo-default",	required_argument,	0,	0},
@@ -38,6 +36,26 @@ static struct option getopt_long_options[] =
 	{0,			0,			0,	0},
 };
 
+static struct option entry_options[] =
+{
+	{"default",		required_argument,	0,	0},
+	{0,			0,			0,	0},
+};
+
+static struct option checkbox_options[] =
+{
+	{"checked",		no_argument,		0,	0},
+	{0,			0,			0,	0},
+};
+
+static struct option combobox_options[] =
+{
+	{"value",		required_argument,	0,	0},
+	{"default",		required_argument,	0,	0},
+	{0,			0,			0,	0},
+};
+
+
 typedef struct
 {
 	char*(*get_item_text)(GtkWidget* widget);
@@ -48,10 +66,6 @@ typedef struct
 {
 	int argc;
 	char** argv;
-	const char* previous_option;
-	char* previous_optarg;
-	int previous_hasarg;
-	int option_queued;
 } option_meta;
 
 /***************************************************************************/
@@ -93,16 +107,8 @@ int get_next_opt(option_meta* meta, const char** option, char** value)
 	int optval;
 	int index;
 	
-	if ( meta->option_queued == 1 )
-	{
-		*option = meta->previous_option;
-		*value = meta->previous_optarg;
-		meta->option_queued = 0;
-		return 0;
-	}
-
 	optval = getopt_long(meta->argc, meta->argv, "",
-			getopt_long_options, &index);
+			main_options, &index);
 
 	if ( optval < 0 )
 		return optval;
@@ -116,35 +122,50 @@ int get_next_opt(option_meta* meta, const char** option, char** value)
 	if ( optval > 0 )
 	{
 		fprintf(stderr, "getopt_long returned an unexpected value %d.  Logic bug in program.\n", optval);
-	       return -1;
+		return -1;
 	}	       
 
-	meta->previous_option = getopt_long_options[index].name;
-	meta->previous_optarg = optarg;
-
-	*option = getopt_long_options[index].name;
+	*option = main_options[index].name;
 	*value = optarg;
 
 	return 0;
 }
 
 /* Returns 1 if an optional argument was detected, 0 if not */
-int get_optional_default(option_meta* meta, const char** name, char** value)
+int get_optional_default(option_meta* meta, struct option* possible_options, 
+			const char** name, char** value)
 {
+	int optval;
+	int index;
+
 	*name = NULL;
 	*value = NULL;
 
-	if ( get_next_opt(meta, name, value) == 0 )
+	opterr = 0;	/* Don't pollute stderr with spurious messages */
+	optval = getopt_long(meta->argc, meta->argv, "",
+			possible_options, &index);
+	opterr = 1;
+
+	if ( optval < 0 )
+		return optval;
+
+	if ( optval == '?' )
 	{
-		if ( strncasecmp(*name, "add-", 4) != 0 )
-		{
-			*value = NULL;
-			meta->option_queued = 1;
-			return 0;
-		}
-		return 1;
+		optind--;	// Whoops, getopt_long doesn't reset this when
+				// it fails to parse an argument.
+		return 0;
 	}
-	return 0;
+
+	if ( optval > 0 )
+	{
+		fprintf(stderr, "getopt_long returned an unexpected value %d.  Logic bug in program.\n", optval);
+		return -1;
+	}	       
+
+	*name = possible_options[index].name;
+	*value = optarg;
+
+	return 1;
 }
 
 int init_option_meta(option_meta* meta, int argc, char** argv)
@@ -195,6 +216,7 @@ int main(int argc, char** argv)
 	const char* name;
 	char* value;
 	int response;
+	int retval;
 
 	GtkWidget* window;
 	GtkWidget* layout;
@@ -222,11 +244,8 @@ int main(int argc, char** argv)
 	layout = gtk_box_new(GTK_ORIENTATION_VERTICAL, 8);
 	init_option_meta(&longopts, argc, argv);
 
-	// You might be tempted to use optind here, but it gets
-	// all messed up when we look forward to see if the -default
-	// option was specified.
 	int wi = 0;
-	while ( get_next_opt(&longopts, &name, &value) == 0 ) 
+	while ((retval = get_next_opt(&longopts, &name, &value)) == 0 ) 
 	{
 		wi++;
 		if ( strcasecmp(name, "add-label") == 0 )
@@ -245,23 +264,15 @@ int main(int argc, char** argv)
 
 		if ( strcasecmp(name, "add-entry") == 0 )
 		{
-			const char* default_name;
-			char* default_value;
+			const char* opt_name;
+			char* opt_value;
 
 			fields[wi].widget = gtk_entry_new();
 
-			if ( get_optional_default(&longopts, &default_name, &default_value) )
-			{
-				if ( strcasecmp(default_name, "entry-default") == 0 )
-				{
-					gtk_entry_set_text(GTK_ENTRY(fields[wi].widget), default_value);
-				}
-				else
-				{
-					fprintf(stderr, "Error: '%s' is not a valid option to 'add-entry'\n", default_name);
-					exit(-1);
-				}
-			}
+			while ( get_optional_default(&longopts, entry_options, 
+							&opt_name, &opt_value) == 1 )
+				if ( strcasecmp(opt_name, "default") == 0 )
+					gtk_entry_set_text(GTK_ENTRY(fields[wi].widget), opt_value);
 
 			fields[wi].get_item_text = &entry_to_text;
 			add_input_to_layout(layout, value, fields[wi].widget);
@@ -285,27 +296,14 @@ int main(int argc, char** argv)
 		if ( strcasecmp(name, "add-checkbox") == 0 )
 		{
 			const char* opt_name;
-			char* is_checked;
+			char* opt_value;
 
 			fields[wi].widget = gtk_check_button_new();
 
-			if ( get_optional_default(&longopts, &opt_name, &is_checked) )
-			{
+			while ( get_optional_default(&longopts, checkbox_options,
+						&opt_name, &opt_value) == 1 )
 				if ( strcasecmp(opt_name, "checked") == 0 )
-				{
-					if ( strcasecmp(is_checked, "false") != 0 && 
-					     strcasecmp(is_checked, "0") != 0 && 
-					     strcasecmp(is_checked, "no") != 0 )
-					{
-						gtk_toggle_button_set_active(GTK_TOGGLE_BUTTON(fields[wi].widget), TRUE);
-					}
-				}
-				else
-				{
-					fprintf(stderr, "Error, '%s' is not a valid option for 'add-checkbox'\n", opt_name );
-					exit(-1);
-				}
-			}
+					gtk_toggle_button_set_active(GTK_TOGGLE_BUTTON(fields[wi].widget), TRUE);
 
 			fields[wi].get_item_text = &check_button_to_text;
 			add_input_to_layout(layout, value, fields[wi].widget);
@@ -315,30 +313,20 @@ int main(int argc, char** argv)
 		if ( strcasecmp(name, "add-combobox") == 0 )
 		{
 			const char* opt_name;
-			char* opt_val;
+			char* opt_value;
 
 			fields[wi].widget = gtk_combo_box_text_new();
 
-			while ( get_optional_default(&longopts, &opt_name, &opt_val) )
-			{
-				if ( strcasecmp(opt_name, "combo-value") == 0 )
-				{
+			while ( get_optional_default(&longopts, combobox_options, 
+						&opt_name, &opt_value) == 1 )
+				if ( strcasecmp(opt_name, "value") == 0 )
 					gtk_combo_box_text_append_text(
 						GTK_COMBO_BOX_TEXT(fields[wi].widget),
-						opt_val);
-				}
-				else if ( strcasecmp(opt_name, "combo-default") == 0 )
-				{
+						opt_value);
+				else if ( strcasecmp(opt_name, "default") == 0 )
 					gtk_combo_box_text_append_text(
 						GTK_COMBO_BOX_TEXT(fields[wi].widget),
-						opt_val);
-				}
-				else
-				{
-					fprintf(stderr, "Error, '%s' is not a valid option for 'add-combo'\n", opt_name);
-					exit(-1);
-				}
-			}
+						opt_value);
 
 			fields[wi].get_item_text = &combobox_to_text;
 			add_input_to_layout(layout, value, fields[wi].widget);
@@ -387,7 +375,8 @@ int main(int argc, char** argv)
 
 	if ( optind < argc )
 	{
-		printf("Unable to process argument '%s'\n", argv[optind]);
+		printf("Unable to process argument '%s', got '%d'\n",
+		argv[optind], retval);
 		exit(-1);
 	}
 
@@ -475,7 +464,7 @@ Usage:
 --add-print="Label"		Print Dialog
 */
 
-/* new plan for suboptions:  Make a new getopt_long_options string for each and use the regular
+/* new plan for suboptions:  Make a new main_options string for each and use the regular
  * getopt_long to process.  This avoids the problem of having to do all of the extra error
  * checking and also having to put options back.  getopt_long will stop processing when it sees
  * an option it doesn't understand.  I can also shorten option names since they will be unique
