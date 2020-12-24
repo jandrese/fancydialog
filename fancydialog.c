@@ -63,6 +63,13 @@ static struct option filechooser_options[] =
 	{0,			0,			0,	0},
 };
 
+static struct option color_options[] =
+{
+	{"default",		required_argument,	0,	0},
+	{"hexstr",		no_argument,		0,	0},
+	{0,			0,			0,	0},
+};
+
 
 typedef struct
 {
@@ -102,6 +109,27 @@ char* combobox_to_text(GtkWidget* entry)
 char* file_chooser_to_text(GtkWidget* entry)
 {
 	return gtk_file_chooser_get_filename(GTK_FILE_CHOOSER(entry));
+}
+
+char* color_button_to_text(GtkWidget* entry)
+{
+	GdkRGBA colors;
+	char colorstr[32];
+	gtk_color_chooser_get_rgba(GTK_COLOR_CHOOSER(entry), &colors);
+	sprintf(colorstr, "%.7f,%.7f,%.7f,%.7f",
+		colors.red, colors.green, colors.blue, colors.alpha);
+	return strdup(colorstr);
+}
+
+char* color_button_to_hex(GtkWidget* entry)
+{
+	GdkRGBA colors;
+	char colorstr[32];
+	gtk_color_chooser_get_rgba(GTK_COLOR_CHOOSER(entry), &colors);
+	sprintf(colorstr, "#%02x%02x%02x%02x",
+		(int)colors.red * 255, (int)colors.green * 255, 
+		(int)colors.blue * 255, (int)colors.alpha * 255);
+	return strdup(colorstr);
 }
 
 /***************************************************************************/
@@ -211,6 +239,52 @@ int add_input_to_layout(GtkWidget* layout, char* labeltext, GtkWidget* input)
 	gtk_box_pack_start(GTK_BOX(layout), input_layout, FALSE, FALSE, 4);
 
 	return 0;
+}
+
+void parse_colorstr(char* str, GdkRGBA* colors)
+{
+	if ( str[0] == '#' )
+	{
+		int size;
+		int scalefactor;
+		long red;
+		long green;
+		long blue;
+		long alpha;
+		char parsestr[22];
+
+		size = strlen(str) - 1;
+		if ( size % 4 != 0 )
+		{
+			fprintf(stderr, "Error: Unable to parse color %s: Uneven string size\n", str);
+			return;
+		}
+		if ( size > 16 )
+		{
+			fprintf(stderr, "Error: Unable to parse color %s: Too much precision\n", str);
+			return;
+		}
+
+		sprintf(parsestr, "#%%0%d%%0%d%%0%d%%0%d", 
+			size / 4, size / 4, size / 4, size / 4);
+
+		sscanf(str, parsestr, &red, &green, &blue, &alpha);
+
+		scalefactor = (1 << size) - 1;
+		colors->red = red / scalefactor;
+		colors->green = green / scalefactor; 
+		colors->blue = blue / scalefactor; 
+		colors->alpha = alpha / scalefactor;
+	}
+	else
+	{
+		sscanf(str, "%lf,%lf,%lf,%lf", 
+			&colors->red,
+			&colors->green,
+			&colors->blue,
+			&colors->alpha);
+	}
+	return;
 }
 
 void showhelp(char* appname)
@@ -381,7 +455,6 @@ int main(int argc, char** argv)
 		if ( strcasecmp(name, "add-file-selector") == 0 )
 		{
 			GtkFileChooserAction action = GTK_FILE_CHOOSER_ACTION_OPEN;
-			char* defaultfile = NULL;
 
 			while ( get_optional_default(&longopts,
 						filechooser_options,
@@ -411,6 +484,28 @@ int main(int argc, char** argv)
 
 		if ( strcasecmp(name, "add-color") == 0 )
 		{
+			fields[wi].widget = gtk_color_button_new();
+			gtk_color_button_set_title(GTK_COLOR_BUTTON(fields[wi].widget), value);
+			fields[wi].get_item_text = &color_button_to_text;
+
+			while ( get_optional_default(&longopts,
+						color_options,
+						&opt_name, &opt_value) == 1 )
+			{
+				if ( strcasecmp(opt_name, "default") == 0 )
+				{
+					GdkRGBA default_color;
+					parse_colorstr(opt_value, &default_color);
+					gtk_color_chooser_set_rgba(GTK_COLOR_CHOOSER(fields[wi].widget), &default_color);
+				}
+				else if ( strcasecmp(opt_name, "hexstr") == 0 )
+				{
+					fields[wi].get_item_text = &color_button_to_hex;
+				}
+			}
+
+			add_input_to_layout(layout, value, fields[wi].widget);
+			
 			continue;
 		}
 
