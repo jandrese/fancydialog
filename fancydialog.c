@@ -55,6 +55,14 @@ static struct option combobox_options[] =
 	{0,			0,			0,	0},
 };
 
+static struct option filechooser_options[] =
+{
+	{"savefile",		no_argument,		0,	0},
+	{"createfolder",	no_argument,		0,	0},
+	{"selectfolder",	no_argument,		0,	0},
+	{0,			0,			0,	0},
+};
+
 
 typedef struct
 {
@@ -88,16 +96,12 @@ char* check_button_to_text(GtkWidget* entry)
 
 char* combobox_to_text(GtkWidget* entry)
 {
-	char* response;
+	return gtk_combo_box_text_get_active_text(GTK_COMBO_BOX_TEXT(entry));
+}
 
-	/* We're supposed to g_free the response when we're done with it
-	 * but the program will be over at that point so screw it.
-	 */
-	response = gtk_combo_box_text_get_active_text(GTK_COMBO_BOX_TEXT(entry));
-	if ( response == NULL )
-		return "(Unselected)";
-	else
-		return response;
+char* file_chooser_to_text(GtkWidget* entry)
+{
+	return gtk_file_chooser_get_filename(GTK_FILE_CHOOSER(entry));
 }
 
 /***************************************************************************/
@@ -209,12 +213,55 @@ int add_input_to_layout(GtkWidget* layout, char* labeltext, GtkWidget* input)
 	return 0;
 }
 
+void showhelp(char* appname)
+{
+	printf("Displays a GUI dialog box that users can interact with.\n"
+		"Designed to be integrated into shell scripts.\n"
+		"\n"
+		"Usage:\n"
+		"%s [options] <element> [<element>...]\n"
+		"Options:\n"
+		" --title <string>: Set the title of the main window\n"
+		" --position <x,y>: Place the window here, default: center\n"
+		" --size <w,h>: Set the window size\n"
+		"Elements:\n"
+		" --add-label <string>: Adds a label, no return value\n"
+		" --add-separator: Adds a horizontal line\n"
+		" --add-image <path_to_image_file>: Adds an image\n"
+		" --add-entry <label>: Adds a one line textbox, returns the contents\n"
+		"   --default <text>: The entry field is prefilled with this value\n"
+		" --add-password <label>: An entry field where the text is obscured\n"
+		" --add-calendar <label>: An entry where you can pick a date\n"
+		" --add-checkbox <label>: A binary entry, returns 1 or 0\n"
+		"   --checked: The checkbox will be selected by default\n"
+		" --add-combobox <label>: A dropdown menu that allows one selection\n"
+		"   --value <text>: This value will be added to the combobox\n"
+		"   --default <text>: This value will be added and automatically selected\n"
+		" --add-file-selector <label>: Select a file on the filesystem\n"
+		"   --savefile: Switch to choosing a new file to save to\n"
+		"   --selectfolder: Switch to selecting an existing folder\n"
+		"   --createfolder: Switch to createing a new folder\n"
+		" --add-slider <label>: Allows the user to select a value between 0 and 100\n"
+		"   --default <0-100>: Start at this value\n"
+		"   --min <value>: Select a different minimum value\n"
+		"   --max <value>: Select a different maximum value\n"
+		" --add-font <label>: An entry field where you choose a system font\n"
+		"   --default <fontspec>: The default font selected\n"
+		" --add-color <label>: An entry field where you choose a color\n"
+		"   --default <r,g,b>: The color selected by default\n"
+		" --add-application <label>: An entry where you choose from one of the installed applications\n"
+		"   --default <application>: The default application\n",
+		appname);
+	exit(0);
+}
 
 int main(int argc, char** argv)
 {
 	option_meta longopts;
 	const char* name;
 	char* value;
+	const char* opt_name;
+	char* opt_value;
 	int response;
 	int retval;
 
@@ -248,6 +295,9 @@ int main(int argc, char** argv)
 	while ((retval = get_next_opt(&longopts, &name, &value)) == 0 ) 
 	{
 		wi++;
+		if ( strcasecmp(name, "help") == 0 )
+			showhelp(argv[0]);
+
 		if ( strcasecmp(name, "add-label") == 0 )
 		{
 			fields[wi].widget = gtk_label_new(value);
@@ -295,9 +345,6 @@ int main(int argc, char** argv)
 		}
 		if ( strcasecmp(name, "add-checkbox") == 0 )
 		{
-			const char* opt_name;
-			char* opt_value;
-
 			fields[wi].widget = gtk_check_button_new();
 
 			while ( get_optional_default(&longopts, checkbox_options,
@@ -312,9 +359,6 @@ int main(int argc, char** argv)
 
 		if ( strcasecmp(name, "add-combobox") == 0 )
 		{
-			const char* opt_name;
-			char* opt_value;
-
 			fields[wi].widget = gtk_combo_box_text_new();
 
 			while ( get_optional_default(&longopts, combobox_options, 
@@ -336,6 +380,22 @@ int main(int argc, char** argv)
 
 		if ( strcasecmp(name, "add-file-selector") == 0 )
 		{
+			GtkFileChooserAction action = GTK_FILE_CHOOSER_ACTION_OPEN;
+			char* defaultfile = NULL;
+
+			while ( get_optional_default(&longopts,
+						filechooser_options,
+						&opt_name, &opt_value) == 1 )
+				if ( strcasecmp(opt_name, "savefile") == 0 )
+					action = GTK_FILE_CHOOSER_ACTION_SAVE;
+				else if ( strcasecmp(opt_name, "selectfolder") == 0 )
+					action = GTK_FILE_CHOOSER_ACTION_SELECT_FOLDER;
+				else if ( strcasecmp(opt_name, "createfolder") == 0 )
+					action = GTK_FILE_CHOOSER_ACTION_CREATE_FOLDER;
+
+			fields[wi].widget = gtk_file_chooser_button_new(value, action);
+			fields[wi].get_item_text = &file_chooser_to_text;
+			add_input_to_layout(layout, value, fields[wi].widget);
 			continue;
 		}
 
