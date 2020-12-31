@@ -10,41 +10,57 @@
 static struct option main_options[] =
 {
 	{"help",		no_argument,		0,	0},
-	{"text",		required_argument,	0,	0},
-	{"show-header",		no_argument,		0,	0},
+	{"title",		required_argument,	0,	0},
+	{"icon",		required_argument,	0,	0},
+	{"iconfile",		required_argument,	0,	0},
 	{"separator",		required_argument,	0,	0},
+	{"show-header",		no_argument,		0,	0},
 	{"add-label",		required_argument,	0,	0},
 	{"add-separator",	no_argument,		0,	0},
+	{"add-text",		required_argument,	0,	0},
 	{"add-image",		required_argument,	0,	0},
 	{"add-entry",		required_argument,	0,	0},
 	{"add-password",	required_argument,	0,	0},
-	{"password-default",	required_argument,	0,	0},
 	{"add-calendar",	required_argument,	0,	0},
 	{"add-checkbox",	required_argument,	0,	0},
+	{"add-switch",		required_argument,	0,	0},
 	{"add-combobox",	required_argument,	0,	0},
 	{"combo-value",		required_argument,	0,	0},
 	{"combo-default",	required_argument,	0,	0},
 	{"add-file-selector",	required_argument,	0,	0},
-	{"file-default",	required_argument,	0,	0},
 	{"add-slider",		required_argument,	0,	0},
-	{"slider-default",	required_argument,	0,	0},
 	{"add-font",		required_argument,	0,	0},
 	{"add-color",		required_argument,	0,	0},
 	{"add-application",	required_argument,	0,	0},
-	{"add-page-setup",	required_argument,	0,	0},
+/*	
+ 	{"add-page-setup",	required_argument,	0,	0},
 	{"add-print",		required_argument,	0,	0},
+ */
 	{0,			0,			0,	0},
 };
 
 static struct option entry_options[] =
 {
 	{"default",		required_argument,	0,	0},
+	{"width",		required_argument,	0,	0},
 	{0,			0,			0,	0},
 };
 
 static struct option checkbox_options[] =
 {
 	{"checked",		no_argument,		0,	0},
+	{0,			0,			0,	0},
+};
+
+static struct option label_options[] =
+{
+	{"style",		required_argument,	0,	0},
+	{0,			0,			0,	0},
+};
+
+static struct option switch_options[] =
+{
+	{"on",			no_argument,		0,	0},
 	{0,			0,			0,	0},
 };
 
@@ -70,9 +86,31 @@ static struct option color_options[] =
 	{0,			0,			0,	0},
 };
 
+static struct option font_options[] =
+{
+	{"default",		required_argument,	0,	0},
+	{0,			0,			0,	0},
+};
+
+static struct option slider_options[] =
+{
+	{"default",		required_argument,	0,	0},
+	{"min",			required_argument,	0,	0},
+	{"max",			required_argument,	0,	0},
+	{"step",		required_argument,	0,	0},
+	{0,			0,			0,	0},
+};
+
+static struct option application_options[] =
+{
+	{"file",		required_argument,	0,	0},
+	{"mimetype",		required_argument,	0,	0},
+	{0,			0,			0,	0},
+};
 
 typedef struct
 {
+	const char* name;
 	char*(*get_item_text)(GtkWidget* widget);
 	GtkWidget* widget;
 } textconverters;
@@ -93,12 +131,36 @@ char* entry_to_text(GtkWidget* entry)
 	return (char*)gtk_entry_get_text(GTK_ENTRY(entry));
 }
 
+char* textbox_to_text(GtkWidget* entry)
+{
+	GtkTextBuffer* buffer;
+	GtkTextIter start;
+	GtkTextIter end;
+	gchar* rawtext;
+
+	buffer = gtk_text_view_get_buffer(GTK_TEXT_VIEW(entry));
+	gtk_text_buffer_get_iter_at_offset(buffer, &start, 0);
+	gtk_text_buffer_get_iter_at_offset(buffer, &end, -1);
+
+	rawtext = gtk_text_buffer_get_text(buffer, &start, &end, FALSE);
+
+	return g_base64_encode((guchar*)rawtext, strlen(rawtext));
+}
+
 char* check_button_to_text(GtkWidget* entry)
 {
 	if ( gtk_toggle_button_get_active(GTK_TOGGLE_BUTTON(entry)) == TRUE )
 		return "True";
 	else
 		return "False";
+}
+
+char* switch_to_text(GtkWidget* entry)
+{
+	if ( gtk_switch_get_state(GTK_SWITCH(entry)) == TRUE )
+		return "On";
+	else
+		return "Off";
 }
 
 char* combobox_to_text(GtkWidget* entry)
@@ -127,9 +189,40 @@ char* color_button_to_hex(GtkWidget* entry)
 	char colorstr[32];
 	gtk_color_chooser_get_rgba(GTK_COLOR_CHOOSER(entry), &colors);
 	sprintf(colorstr, "#%02x%02x%02x%02x",
-		(int)colors.red * 255, (int)colors.green * 255, 
-		(int)colors.blue * 255, (int)colors.alpha * 255);
+		(uint8_t)(colors.red * 255L), (uint8_t)(colors.green * 255L), 
+		(uint8_t)(colors.blue * 255L), (uint8_t)(colors.alpha * 255L));
 	return strdup(colorstr);
+}
+
+char* font_chooser_to_text(GtkWidget* entry)
+{
+	return gtk_font_chooser_get_font(GTK_FONT_CHOOSER(entry));
+}
+
+char* slider_to_text(GtkWidget* entry)
+{
+	char* valuestr;
+
+	valuestr = malloc(sizeof(char*) * 32);
+	sprintf(valuestr, "%f", gtk_range_get_value(GTK_RANGE(entry)));
+	return valuestr;
+}	
+
+char* app_chooser_to_text(GtkWidget* entry)
+{
+	GAppInfo* info;
+
+	info = gtk_app_chooser_get_app_info(GTK_APP_CHOOSER(entry));
+
+	if ( info == NULL )
+		return "UNSET";
+
+	if ( g_app_info_get_commandline(info) != NULL )
+		return (char*)g_app_info_get_commandline(info);
+	else if ( g_app_info_get_executable(info) )
+		return (char*)g_app_info_get_executable(info);
+	else
+		return "UNKNOWN";
 }
 
 /***************************************************************************/
@@ -226,17 +319,22 @@ void cancel_click(GtkWidget* button, gpointer nothing)
 	return;
 }
 
-int add_input_to_layout(GtkWidget* layout, char* labeltext, GtkWidget* input)
+int add_input_to_layout(GtkWidget* layout, char* labeltext, GtkWidget* input, int* row)
 {
-	GtkWidget* input_layout;
 	GtkWidget* label;
 
 	label = gtk_label_new(labeltext);
-	input_layout = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 8);
 
-	gtk_box_pack_start(GTK_BOX(input_layout), label, FALSE, FALSE, 4);
-	gtk_box_pack_start(GTK_BOX(input_layout), input, FALSE, FALSE, 4);
-	gtk_box_pack_start(GTK_BOX(layout), input_layout, FALSE, FALSE, 4);
+	gtk_label_set_xalign(GTK_LABEL(label), 1.0);
+
+	gtk_grid_attach(GTK_GRID(layout), label, 0, *row, 1, 1); 
+
+	gtk_widget_set_hexpand(input, FALSE);
+	gtk_widget_set_halign(input, GTK_ALIGN_START);
+
+	gtk_grid_attach(GTK_GRID(layout), input, 1, *row, 1, 1);
+
+	*row += 1;
 
 	return 0;
 }
@@ -300,14 +398,19 @@ void showhelp(char* appname)
 		" --size <w,h>: Set the window size\n"
 		"Elements:\n"
 		" --add-label <string>: Adds a label, no return value\n"
+		"   --style 'Pango Style String'\n"
+		"     See: https://developer.gnome.org/pygtk/stable/pango-markup-language.html\n"
+		"     Example: --add-label \"My Fancy Label\" --style 'style=\"bold\" size=\"x-large\"'\n"
 		" --add-separator: Adds a horizontal line\n"
 		" --add-image <path_to_image_file>: Adds an image\n"
 		" --add-entry <label>: Adds a one line textbox, returns the contents\n"
 		"   --default <text>: The entry field is prefilled with this value\n"
 		" --add-password <label>: An entry field where the text is obscured\n"
 		" --add-calendar <label>: An entry where you can pick a date\n"
-		" --add-checkbox <label>: A binary entry, returns 1 or 0\n"
+		" --add-checkbox <label>: A binary entry, returns 1 if selected, 0 by default\n"
 		"   --checked: The checkbox will be selected by default\n"
+		" --add-switch <label>: Another binary entry, this one stylized like an on-off switch, default off\n"
+		"   --on: The switch will be in the 'on' position by default\n"
 		" --add-combobox <label>: A dropdown menu that allows one selection\n"
 		"   --value <text>: This value will be added to the combobox\n"
 		"   --default <text>: This value will be added and automatically selected\n"
@@ -338,11 +441,15 @@ int main(int argc, char** argv)
 	char* opt_value;
 	int response;
 	int retval;
+	int wi;	/* Widget Index */
+	int row;
+	char separator[32];
 
 	GtkWidget* window;
 	GtkWidget* layout;
 
 	textconverters* fields;
+	sprintf(separator, "=");
 
 	gtk_init(&argc, &argv);
 
@@ -362,27 +469,88 @@ int main(int argc, char** argv)
 	gdk_monitor_get_workarea(gdk_display_get_primary_monitor(gdk_display_get_default()),
 				&screensize);
 
-	layout = gtk_box_new(GTK_ORIENTATION_VERTICAL, 8);
+	layout = gtk_grid_new();
+	gtk_grid_set_row_spacing(GTK_GRID(layout), 8);
+	gtk_grid_set_column_spacing(GTK_GRID(layout), 8);
 	init_option_meta(&longopts, argc, argv);
 
-	int wi = 0;
+	wi = 0;
+	row = 0;
 	while ((retval = get_next_opt(&longopts, &name, &value)) == 0 ) 
 	{
 		wi++;
+		fields[wi].name = value;
+
 		if ( strcasecmp(name, "help") == 0 )
 			showhelp(argv[0]);
+
+		if ( strcasecmp(name, "separator") == 0 )
+		{
+			strncpy(separator, value, 31);
+			continue;
+		}
+
+		if ( strcasecmp(name, "title") == 0 )
+		{
+			gtk_window_set_title(GTK_WINDOW(window), value);
+			continue;
+		}
+
+		if ( strcasecmp(name, "icon") == 0 )
+		{
+			gtk_window_set_icon_name(GTK_WINDOW(window), value);
+			continue;
+		}
+
+		if ( strcasecmp(name, "iconfile") == 0 )
+		{
+			GError* gerr = NULL;
+			gtk_window_set_icon_from_file(GTK_WINDOW(window), value, &gerr);
+
+			if ( gerr != NULL )
+			{
+				fprintf(stderr, "Failed to load icon file %s: %s\n", value, gerr->message);
+				g_error_free(gerr);
+			}
+
+			continue;
+		}
 
 		if ( strcasecmp(name, "add-label") == 0 )
 		{
 			fields[wi].widget = gtk_label_new(value);
 			gtk_label_set_xalign(GTK_LABEL(fields[wi].widget), 0.0);
-			gtk_box_pack_start(GTK_BOX(layout),
-				fields[wi].widget, FALSE, FALSE, 4);
+
+			while ( get_optional_default(&longopts, label_options,
+							&opt_name, &opt_value) == 1 )
+				if ( strcasecmp(opt_name, "style") == 0 )
+				{
+					const char* format = "<span %s>%s</span>";
+					char* formatted;
+					formatted = malloc(sizeof(char) * (strlen(format) + strlen(value) + strlen(opt_value) + 1));
+					sprintf(formatted, format, opt_value, value);
+						  	
+					gtk_label_set_markup(GTK_LABEL(fields[wi].widget), formatted);
+					free(formatted);
+				}
+
+			gtk_grid_attach(GTK_GRID(layout), fields[wi].widget, 0, row++, 2, 1);
 			continue;
 		}
 
-		if ( strcasecmp(name, "text") == 0 )
+		if ( strcasecmp(name, "add-separator") == 0 )
 		{
+			fields[wi].widget = gtk_separator_new(GTK_ORIENTATION_HORIZONTAL);
+			gtk_grid_attach(GTK_GRID(layout), fields[wi].widget, 0, row++, 2, 1);
+			continue;
+		}
+
+		if ( strcasecmp(name, "add-text") == 0 )
+		{
+			fields[wi].widget = gtk_text_view_new();
+
+			fields[wi].get_item_text = &textbox_to_text;
+			add_input_to_layout(layout, value, fields[wi].widget, &row);
 			continue;
 		}
 
@@ -397,9 +565,12 @@ int main(int argc, char** argv)
 							&opt_name, &opt_value) == 1 )
 				if ( strcasecmp(opt_name, "default") == 0 )
 					gtk_entry_set_text(GTK_ENTRY(fields[wi].widget), opt_value);
+				else if ( strcasecmp(opt_name, "width") == 0 )
+					gtk_entry_set_width_chars(GTK_ENTRY(fields[wi].widget),
+								strtol(opt_value, NULL, 10));
 
 			fields[wi].get_item_text = &entry_to_text;
-			add_input_to_layout(layout, value, fields[wi].widget);
+			add_input_to_layout(layout, value, fields[wi].widget, &row);
 			continue;
 		}
 
@@ -409,7 +580,7 @@ int main(int argc, char** argv)
 			gtk_entry_set_visibility(
 				GTK_ENTRY(fields[wi].widget), FALSE);
 			fields[wi].get_item_text = &entry_to_text;
-			add_input_to_layout(layout, value, fields[wi].widget);
+			add_input_to_layout(layout, value, fields[wi].widget, &row);
 			continue;
 		}
 
@@ -427,7 +598,21 @@ int main(int argc, char** argv)
 					gtk_toggle_button_set_active(GTK_TOGGLE_BUTTON(fields[wi].widget), TRUE);
 
 			fields[wi].get_item_text = &check_button_to_text;
-			add_input_to_layout(layout, value, fields[wi].widget);
+			add_input_to_layout(layout, value, fields[wi].widget, &row);
+			continue;
+		}
+
+		if ( strcasecmp(name, "add-switch") == 0 )
+		{
+			fields[wi].widget = gtk_switch_new();
+
+			while ( get_optional_default(&longopts, switch_options,
+						&opt_name, &opt_value) == 1 )
+				if ( strcasecmp(opt_name, "on") == 0 )
+					gtk_switch_set_state(GTK_SWITCH(fields[wi].widget), TRUE);
+
+			fields[wi].get_item_text = &switch_to_text;
+			add_input_to_layout(layout, value, fields[wi].widget, &row);
 			continue;
 		}
 
@@ -447,7 +632,7 @@ int main(int argc, char** argv)
 						opt_value);
 
 			fields[wi].get_item_text = &combobox_to_text;
-			add_input_to_layout(layout, value, fields[wi].widget);
+			add_input_to_layout(layout, value, fields[wi].widget, &row);
 
 			continue;
 		}
@@ -468,17 +653,82 @@ int main(int argc, char** argv)
 
 			fields[wi].widget = gtk_file_chooser_button_new(value, action);
 			fields[wi].get_item_text = &file_chooser_to_text;
-			add_input_to_layout(layout, value, fields[wi].widget);
-			continue;
-		}
-
-		if ( strcasecmp(name, "add-slider") == 0 )
-		{
+			add_input_to_layout(layout, value, fields[wi].widget, &row);
 			continue;
 		}
 
 		if ( strcasecmp(name, "add-font") == 0 )
 		{
+			fields[wi].widget = gtk_font_button_new();
+
+			while ( get_optional_default(&longopts,
+						font_options,
+						&opt_name, &opt_value) == 1)
+				if ( strcasecmp(opt_name, "default" ) == 0 )
+					gtk_font_chooser_set_font(GTK_FONT_CHOOSER(fields[wi].widget), opt_value);
+
+			fields[wi].get_item_text = &font_chooser_to_text;
+			add_input_to_layout(layout, value, fields[wi].widget, &row);
+			continue;
+		}
+
+		if ( strcasecmp(name, "add-slider") == 0 )
+		{
+			double min = 0;
+			double max = 100;
+			double step = 1;
+			double defaultvalue = 0;
+
+			while ( get_optional_default(&longopts,
+						slider_options,
+						&opt_name, &opt_value) == 1 )
+				if ( strcasecmp(opt_name, "min") == 0 )
+					min = strtod(opt_value, NULL);
+				else if ( strcasecmp(opt_name, "max") == 0 )
+					max = strtod(opt_value, NULL);
+				else if ( strcasecmp(opt_name, "step") == 0 )
+					step = strtod(opt_value, NULL);
+				else if ( strcasecmp(opt_name, "default") == 0 )
+					defaultvalue = strtod(opt_value, NULL);
+
+			if ( (min >= max) || ((max - min) < step) || 
+			     (defaultvalue < min) || (defaultvalue > max) )
+			{
+				fprintf(stderr, "Error: slider configuration doesn't make sense.  Min = %lf, Default = %lf, Max = %lf, Step = %lf.\n"
+						"Parameters must satisfy: min <= default <= max, step <= (max - min)\n", min, defaultvalue, max, step);
+				exit(-1);
+			}
+			
+			fields[wi].widget = gtk_scale_new_with_range(GTK_ORIENTATION_HORIZONTAL,
+								min, max, step);
+			gtk_range_set_value(GTK_RANGE(fields[wi].widget), defaultvalue);
+
+			fields[wi].get_item_text = &slider_to_text;
+
+			/*
+			GtkStyleContext* slider_style_context;
+			slider_style_context = gtk_widget_get_style_context(fields[wi].widget);
+			GtkCssProvider* width_provider;
+			width_provider = gtk_css_provider_new();
+			GError* gerr = NULL;
+			gtk_css_provider_load_from_data(GTK_CSS_PROVIDER(width_provider),
+							"slider { min-width: 200px }\n", -1, &gerr);
+			if ( gerr != NULL )
+			{
+				fprintf(stderr, "Parsing CSS string: %s\n", gerr->message);
+				g_error_free(gerr);
+			}
+			else
+			{
+				gtk_style_context_add_provider(slider_style_context, 
+					GTK_STYLE_PROVIDER(width_provider), 
+					GTK_STYLE_PROVIDER_PRIORITY_USER);
+			}
+			*/
+			gtk_widget_set_size_request(fields[wi].widget, 200, -1);
+
+			add_input_to_layout(layout, value, fields[wi].widget, &row);
+
 			continue;
 		}
 
@@ -486,7 +736,6 @@ int main(int argc, char** argv)
 		{
 			fields[wi].widget = gtk_color_button_new();
 			gtk_color_button_set_title(GTK_COLOR_BUTTON(fields[wi].widget), value);
-			fields[wi].get_item_text = &color_button_to_text;
 
 			while ( get_optional_default(&longopts,
 						color_options,
@@ -504,16 +753,38 @@ int main(int argc, char** argv)
 				}
 			}
 
-			add_input_to_layout(layout, value, fields[wi].widget);
+			fields[wi].get_item_text = &color_button_to_text;
+			add_input_to_layout(layout, value, fields[wi].widget, &row);
 			
 			continue;
 		}
 
 		if ( strcasecmp(name, "add-application") == 0 )
 		{
+
+			char* content_type = NULL;
+
+			while ( get_optional_default(&longopts,
+						application_options,
+						&opt_name, &opt_value) == 1 )
+				if ( strcasecmp(opt_name, "file") == 0 )
+				{
+					content_type = g_content_type_guess(opt_value, NULL, 0, NULL);
+				}
+				else if ( strcasecmp(opt_name, "mimetype") == 0 )
+				{
+					content_type = strdup(opt_value);
+				}
+
+
+			fields[wi].widget = gtk_app_chooser_button_new(content_type);
+			fields[wi].get_item_text = &app_chooser_to_text;
+			add_input_to_layout(layout, value, fields[wi].widget, &row);
+
 			continue;
 		}
 
+		/*
 		if ( strcasecmp(name, "add-page-setup") == 0 )
 		{
 			continue;
@@ -523,6 +794,7 @@ int main(int argc, char** argv)
 		{
 			continue;
 		}
+		*/
 
 		printf("Error: Option %s is not supported.\n", name);
 		exit(-1);
@@ -545,6 +817,7 @@ int main(int argc, char** argv)
 	okbutton = gtk_button_new_with_label("Ok");
 	g_signal_connect(G_OBJECT(okbutton), "clicked", 
 			G_CALLBACK(ok_click), &response);
+
 	gtk_box_pack_start(GTK_BOX(buttonlayout), okbutton, FALSE, FALSE, 4);
 
 	cancelbutton = gtk_button_new_with_label("Cancel");
@@ -552,9 +825,13 @@ int main(int argc, char** argv)
 			G_CALLBACK(cancel_click), &response);
 	gtk_box_pack_start(GTK_BOX(buttonlayout), cancelbutton, FALSE, FALSE, 4);
 
-	gtk_box_pack_start(GTK_BOX(layout), buttonlayout, FALSE, FALSE, 0);
+	gtk_grid_attach(GTK_GRID(layout), buttonlayout, 1, row, 1, 1);
 
-	gtk_container_add(GTK_CONTAINER(window), layout);
+	/* Stuff the grid into a box so I can pad around the edges */
+	GtkWidget* paddingbox = gtk_box_new(GTK_ORIENTATION_VERTICAL, 0);
+	gtk_box_pack_start(GTK_BOX(paddingbox), layout, FALSE, FALSE, 8);
+
+	gtk_container_add(GTK_CONTAINER(window), paddingbox);
 	gtk_widget_show_all(window);
 
 	gtk_main();
@@ -567,18 +844,9 @@ int main(int argc, char** argv)
 		if ( fields[optnum].get_item_text == NULL )
 			continue;
 
-		char* text;
+		char* text = fields[optnum].get_item_text(fields[optnum].widget);
 
-		text = fields[optnum].get_item_text(fields[optnum].widget);
-
-		if ( text == NULL )
-		{
-			printf("%d: (NULL)\n", optnum);
-		}
-		else
-		{
-			printf("%d: %s\n", optnum, text);
-		}
+		printf("%s%s%s\n", fields[optnum].name, separator, text);
 	}
 
 	free(fields);
@@ -587,41 +855,4 @@ int main(int argc, char** argv)
 
 /* 
  * https://developer.gnome.org/gtk3/stable/ch03.html
-
-A remake of the zenity --form option with a bit more functionality.  
-
-Usage:
---text="text"			Shown on the top of the window
---show-header			Show the column names
---separator="char"		Set the output separater character, default '|'
---add-label="Label"		Plain text, useful for comments or headings
---add-separator			A simple line, for breaking up sections
---add-image="/path/to/image"	A graphic, doesn't return anything
-
---add-entry="Label"		Textbox field
-  --entry-default="Text"	Default fill
---add-password"Label"		Password field
-  --password-default="Text"	Default password (note: user won't see it!)
---add-calendar="Label"		Calendar field -- lets the user select a day
---add-checkbox="Label"		Checkbox field
-  --checked			It is selected by default
---add-combo="Label"		Add a combobox
-  --combo-values="a|b|c"	Separated by |
-  --combo-default="a"		If unset there will be no default
---add-file-selector="Label"	Chooses a file or directory
-  --file-default="filename"
---add-slider="Label		A Slider, returns a value from 0 to 100
-  --slider-default="#"		Should be a value from 0 to 100
---add-font="Label"		Font selector
---add-color="Label"		Color selector
---add-application="Label"	Application selector
---add-page-setup="Label"	Page Setup (for printing)
---add-print="Label"		Print Dialog
-*/
-
-/* new plan for suboptions:  Make a new main_options string for each and use the regular
- * getopt_long to process.  This avoids the problem of having to do all of the extra error
- * checking and also having to put options back.  getopt_long will stop processing when it sees
- * an option it doesn't understand.  I can also shorten option names since they will be unique
- * to each -add option automatically.
  */
