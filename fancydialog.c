@@ -92,6 +92,12 @@ static struct option font_options[] =
 	{0,			0,			0,	0},
 };
 
+static struct option calendar_options[] =
+{
+	{"format",		required_argument,	0,	0},
+	{0,			0,			0,	0},
+};
+
 static struct option slider_options[] =
 {
 	{"default",		required_argument,	0,	0},
@@ -111,7 +117,8 @@ static struct option application_options[] =
 typedef struct
 {
 	const char* name;
-	char*(*get_item_text)(GtkWidget* widget);
+	char*(*get_item_text)(GtkWidget* widget, void* extra);
+	void* extra;
 	GtkWidget* widget;
 } textconverters;
 
@@ -126,12 +133,12 @@ typedef struct
  * the widget.
  */
 
-char* entry_to_text(GtkWidget* entry)
+char* entry_to_text(GtkWidget* entry, void* extra)
 {
 	return (char*)gtk_entry_get_text(GTK_ENTRY(entry));
 }
 
-char* textbox_to_text(GtkWidget* entry)
+char* textbox_to_text(GtkWidget* entry, void* extra)
 {
 	GtkTextBuffer* buffer;
 	GtkTextIter start;
@@ -147,7 +154,7 @@ char* textbox_to_text(GtkWidget* entry)
 	return g_base64_encode((guchar*)rawtext, strlen(rawtext));
 }
 
-char* check_button_to_text(GtkWidget* entry)
+char* check_button_to_text(GtkWidget* entry, void* extra)
 {
 	if ( gtk_toggle_button_get_active(GTK_TOGGLE_BUTTON(entry)) == TRUE )
 		return "True";
@@ -155,7 +162,7 @@ char* check_button_to_text(GtkWidget* entry)
 		return "False";
 }
 
-char* switch_to_text(GtkWidget* entry)
+char* switch_to_text(GtkWidget* entry, void* extra)
 {
 	if ( gtk_switch_get_state(GTK_SWITCH(entry)) == TRUE )
 		return "On";
@@ -163,17 +170,17 @@ char* switch_to_text(GtkWidget* entry)
 		return "Off";
 }
 
-char* combobox_to_text(GtkWidget* entry)
+char* combobox_to_text(GtkWidget* entry, void* extra)
 {
 	return gtk_combo_box_text_get_active_text(GTK_COMBO_BOX_TEXT(entry));
 }
 
-char* file_chooser_to_text(GtkWidget* entry)
+char* file_chooser_to_text(GtkWidget* entry, void* extra)
 {
 	return gtk_file_chooser_get_filename(GTK_FILE_CHOOSER(entry));
 }
 
-char* color_button_to_text(GtkWidget* entry)
+char* color_button_to_text(GtkWidget* entry, void* extra)
 {
 	GdkRGBA colors;
 	char colorstr[32];
@@ -183,7 +190,7 @@ char* color_button_to_text(GtkWidget* entry)
 	return strdup(colorstr);
 }
 
-char* color_button_to_hex(GtkWidget* entry)
+char* color_button_to_hex(GtkWidget* entry, void* extra)
 {
 	GdkRGBA colors;
 	char colorstr[32];
@@ -194,12 +201,12 @@ char* color_button_to_hex(GtkWidget* entry)
 	return strdup(colorstr);
 }
 
-char* font_chooser_to_text(GtkWidget* entry)
+char* font_chooser_to_text(GtkWidget* entry, void* extra)
 {
 	return gtk_font_chooser_get_font(GTK_FONT_CHOOSER(entry));
 }
 
-char* slider_to_text(GtkWidget* entry)
+char* slider_to_text(GtkWidget* entry, void* extra)
 {
 	char* valuestr;
 
@@ -208,7 +215,7 @@ char* slider_to_text(GtkWidget* entry)
 	return valuestr;
 }	
 
-char* app_chooser_to_text(GtkWidget* entry)
+char* app_chooser_to_text(GtkWidget* entry, void* extra)
 {
 	GAppInfo* info;
 
@@ -223,6 +230,27 @@ char* app_chooser_to_text(GtkWidget* entry)
 		return (char*)g_app_info_get_executable(info);
 	else
 		return "UNKNOWN";
+}
+
+char* calendar_to_text(GtkWidget* entry, void* extra)
+{
+	guint year;
+	guint month;
+	guint day;
+
+	gtk_calendar_get_date(GTK_CALENDAR(entry), &year, &month, &day);
+
+	GTimeZone* tz;
+	GDateTime* usertime;
+
+	tz = g_time_zone_new("Z");
+
+	usertime = g_date_time_new(tz, year, month + 1, day, 0, 0, 0);
+
+	if ( extra != NULL )
+		return g_date_time_format(usertime, (char*)extra);
+	else
+		return g_date_time_format(usertime, "%d/%m/%Y");
 }
 
 /***************************************************************************/
@@ -407,6 +435,8 @@ void showhelp(char* appname)
 		"   --default <text>: The entry field is prefilled with this value\n"
 		" --add-password <label>: An entry field where the text is obscured\n"
 		" --add-calendar <label>: An entry where you can pick a date\n"
+		"   --format <formatstring>: Format of the output. See:\n"
+		"   https://developer.gnome.org/glib/stable/glib-GDateTime.html#g-date-time-format\n"
 		" --add-checkbox <label>: A binary entry, returns 1 if selected, 0 by default\n"
 		"   --checked: The checkbox will be selected by default\n"
 		" --add-switch <label>: Another binary entry, this one stylized like an on-off switch, default off\n"
@@ -554,6 +584,14 @@ int main(int argc, char** argv)
 			continue;
 		}
 
+		if ( strcasecmp(name, "add-image") == 0 )
+		{
+			fields[wi].widget = gtk_image_new_from_file(value);
+			gtk_grid_attach(GTK_GRID(layout), fields[wi].widget,
+					1, row++, 1, 1);
+			continue;
+		}
+
 		if ( strcasecmp(name, "add-entry") == 0 )
 		{
 			const char* opt_name;
@@ -586,6 +624,20 @@ int main(int argc, char** argv)
 
 		if ( strcasecmp(name, "add-calendar") == 0 )
 		{
+			fields[wi].widget = gtk_calendar_new();
+			fields[wi].get_item_text = &calendar_to_text;
+
+			while ( get_optional_default(&longopts,
+				calendar_options,
+				&opt_name, &opt_value) == 1 )
+			{
+				if ( strcasecmp(opt_name, "format") == 0 )
+				{
+					fields[wi].extra = strdup(opt_value);
+				}
+			}
+			add_input_to_layout(layout, value, fields[wi].widget, &row);
+
 			continue;
 		}
 		if ( strcasecmp(name, "add-checkbox") == 0 )
@@ -691,8 +743,12 @@ int main(int argc, char** argv)
 				else if ( strcasecmp(opt_name, "default") == 0 )
 					defaultvalue = strtod(opt_value, NULL);
 
-			if ( (min >= max) || ((max - min) < step) || 
-			     (defaultvalue < min) || (defaultvalue > max) )
+			if ( defaultvalue < min )
+				defaultvalue = min;
+			if ( defaultvalue > max )
+				defaultvalue = max;
+
+			if ( (min >= max) || ((max - min) < step) )
 			{
 				fprintf(stderr, "Error: slider configuration doesn't make sense.  Min = %lf, Default = %lf, Max = %lf, Step = %lf.\n"
 						"Parameters must satisfy: min <= default <= max, step <= (max - min)\n", min, defaultvalue, max, step);
@@ -844,7 +900,8 @@ int main(int argc, char** argv)
 		if ( fields[optnum].get_item_text == NULL )
 			continue;
 
-		char* text = fields[optnum].get_item_text(fields[optnum].widget);
+		char* text = fields[optnum].get_item_text(fields[optnum].widget,
+					     fields[optnum].extra);
 
 		printf("%s%s%s\n", fields[optnum].name, separator, text);
 	}
