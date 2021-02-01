@@ -14,7 +14,6 @@ static struct option main_options[] =
 	{"icon",		required_argument,	0,	0},
 	{"iconfile",		required_argument,	0,	0},
 	{"separator",		required_argument,	0,	0},
-	{"show-header",		no_argument,		0,	0},
 	{"add-label",		required_argument,	0,	0},
 	{"add-separator",	no_argument,		0,	0},
 	{"add-text",		required_argument,	0,	0},
@@ -25,8 +24,6 @@ static struct option main_options[] =
 	{"add-checkbox",	required_argument,	0,	0},
 	{"add-switch",		required_argument,	0,	0},
 	{"add-combobox",	required_argument,	0,	0},
-	{"combo-value",		required_argument,	0,	0},
-	{"combo-default",	required_argument,	0,	0},
 	{"add-file-selector",	required_argument,	0,	0},
 	{"add-slider",		required_argument,	0,	0},
 	{"add-font",		required_argument,	0,	0},
@@ -424,25 +421,30 @@ void showhelp(char* appname)
 		" --title <string>: Set the title of the main window\n"
 		" --position <x,y>: Place the window here, default: center\n"
 		" --size <w,h>: Set the window size\n"
+		" --icon <icon name>: Set the icon for the window by name\n"
+		" --iconfile <file>: Set the icon for the window from a file\n"
+		" --separator <string>: In the output use this string to\n"
+		"		separate keys from values.  Defaults to '='\n"
 		"Elements:\n"
 		" --add-label <string>: Adds a label, no return value\n"
 		"   --style 'Pango Style String'\n"
 		"     See: https://developer.gnome.org/pygtk/stable/pango-markup-language.html\n"
 		"     Example: --add-label \"My Fancy Label\" --style 'style=\"bold\" size=\"x-large\"'\n"
 		" --add-separator: Adds a horizontal line\n"
-		" --add-image <path_to_image_file>: Adds an image\n"
+		" --add-image <image_file>: Adds an image, the file must be a PNG\n"
 		" --add-entry <label>: Adds a one line textbox, returns the contents\n"
 		"   --default <text>: The entry field is prefilled with this value\n"
 		" --add-password <label>: An entry field where the text is obscured\n"
 		" --add-calendar <label>: An entry where you can pick a date\n"
 		"   --format <formatstring>: Format of the output. See:\n"
 		"   https://developer.gnome.org/glib/stable/glib-GDateTime.html#g-date-time-format\n"
-		" --add-checkbox <label>: A binary entry, returns 1 if selected, 0 by default\n"
+		" --add-checkbox <label>: A binary entry, returns True if selected, False if not\n"
 		"   --checked: The checkbox will be selected by default\n"
 		" --add-switch <label>: Another binary entry, this one stylized like an on-off switch, default off\n"
 		"   --on: The switch will be in the 'on' position by default\n"
 		" --add-combobox <label>: A dropdown menu that allows one selection\n"
-		"   --value <text>: This value will be added to the combobox\n"
+		"   --value <text>: This value will be added to the combox\n"
+		"                   Use this option multiple times to add additional entries\n"
 		"   --default <text>: This value will be added and automatically selected\n"
 		" --add-file-selector <label>: Select a file on the filesystem\n"
 		"   --savefile: Switch to choosing a new file to save to\n"
@@ -456,6 +458,7 @@ void showhelp(char* appname)
 		"   --default <fontspec>: The default font selected\n"
 		" --add-color <label>: An entry field where you choose a color\n"
 		"   --default <r,g,b>: The color selected by default\n"
+		"   --hexstr: Output a hex string #rrggbb instead of decimal\n"
 		" --add-application <label>: An entry where you choose from one of the installed applications\n"
 		"   --default <application>: The default application\n",
 		appname);
